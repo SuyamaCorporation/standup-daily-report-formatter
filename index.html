@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>デイリースタンドアップ報告フォーマッター</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+<div class="max-w-3xl mx-auto px-4 py-8">
+  <h1 class="text-3xl font-bold text-center mb-2 text-sky-400">デイリースタンドアップ報告フォーマッター</h1>
+  <p class="text-center text-gray-400 mb-8 text-sm">3フィールドを入力してSlack・Markdown・テキスト形式に即時変換</p>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-gray-800 rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4 text-sky-300">入力</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-green-300 mb-1 font-medium" for="yesterday">昨日やったこと</label>
+          <textarea id="yesterday" rows="3" placeholder="・タスクA完了&#10;・レビュー依頼提出" class="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y" aria-label="昨日やったこと"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm text-blue-300 mb-1 font-medium" for="today">今日やること</label>
+          <textarea id="today" rows="3" placeholder="・タスクB着手&#10;・ミーティング参加" class="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y" aria-label="今日やること"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm text-red-300 mb-1 font-medium" for="blocker">ブロッカー</label>
+          <textarea id="blocker" rows="2" placeholder="なし / 仕様確認待ち等" class="w-full bg-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y" aria-label="ブロッカー"></textarea>
+        </div>
+        <div class="flex gap-3">
+          <button id="generateBtn" class="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors" aria-label="生成">生成</button>
+          <button id="saveBtn" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-lg transition-colors" aria-label="履歴に保存">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-3 text-yellow-300">出力</h2>
+      <div class="flex gap-1 mb-3">
+        <button class="tabBtn text-xs px-3 py-1.5 rounded bg-sky-700 text-white active-tab" data-tab="slack" aria-label="Slackタブ">Slack</button>
+        <button class="tabBtn text-xs px-3 py-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600" data-tab="markdown" aria-label="Markdownタブ">Markdown</button>
+        <button class="tabBtn text-xs px-3 py-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600" data-tab="plain" aria-label="プレーンテキストタブ">プレーン</button>
+      </div>
+      <div class="relative">
+        <pre id="outputBox" class="bg-gray-700 rounded-lg p-3 text-xs text-gray-200 whitespace-pre-wrap min-h-[160px] font-mono overflow-auto max-h-72"></pre>
+        <button id="copyBtn" class="absolute top-2 right-2 text-xs bg-sky-700 hover:bg-sky-600 text-white px-2 py-1 rounded" aria-label="コピー">コピー</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-gray-800 rounded-xl p-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-semibold text-gray-300">過去報告履歴 <span class="text-sm text-gray-500 font-normal">(最大30件)</span></h2>
+      <button id="clearHistBtn" class="text-xs bg-red-900/50 hover:bg-red-900 text-red-300 px-2 py-1 rounded" aria-label="履歴を全削除">全削除</button>
+    </div>
+    <div id="historyList" class="space-y-2 max-h-64 overflow-y-auto"></div>
+  </div>
+</div>
+
+<script>
+let activeTab = 'slack';
+
+function esc(s) { const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
+function lines(text) {
+  return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+}
+
+function formatSlack(yesterday, today, blocker) {
+  const date = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit' });
+  let out = `*【デイリースタンドアップ ${date}】*\n\n`;
+  out += `*:white_check_mark: 昨日やったこと*\n`;
+  lines(yesterday).forEach(l => { out += `• ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n*:memo: 今日やること*\n`;
+  lines(today).forEach(l => { out += `• ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n*:no_entry_sign: ブロッカー*\n`;
+  const bl = lines(blocker);
+  if (bl.length === 0 || (bl.length === 1 && (bl[0] === 'なし' || bl[0] === 'なし' || bl[0].toLowerCase() === 'none'))) {
+    out += `• なし\n`;
+  } else {
+    bl.forEach(l => { out += `• ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  }
+  return out;
+}
+
+function formatMarkdown(yesterday, today, blocker) {
+  const date = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit' });
+  let out = `## デイリースタンドアップ ${date}\n\n`;
+  out += `### ✅ 昨日やったこと\n`;
+  lines(yesterday).forEach(l => { out += `- ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n### 📝 今日やること\n`;
+  lines(today).forEach(l => { out += `- ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n### 🚫 ブロッカー\n`;
+  const bl = lines(blocker);
+  if (bl.length === 0) { out += `- なし\n`; }
+  else { bl.forEach(l => { out += `- ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; }); }
+  return out;
+}
+
+function formatPlain(yesterday, today, blocker) {
+  const date = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit' });
+  let out = `デイリースタンドアップ ${date}\n${'─'.repeat(30)}\n\n`;
+  out += `[昨日やったこと]\n`;
+  lines(yesterday).forEach(l => { out += `  ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n[今日やること]\n`;
+  lines(today).forEach(l => { out += `  ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; });
+  out += `\n[ブロッカー]\n`;
+  const bl = lines(blocker);
+  if (bl.length === 0) { out += `  なし\n`; }
+  else { bl.forEach(l => { out += `  ${l.startsWith('・') || l.startsWith('•') ? l.slice(1).trim() : l}\n`; }); }
+  return out;
+}
+
+function generate() {
+  const y = document.getElementById('yesterday').value;
+  const t = document.getElementById('today').value;
+  const b = document.getElementById('blocker').value;
+
+  const outputs = {
+    slack: formatSlack(y, t, b),
+    markdown: formatMarkdown(y, t, b),
+    plain: formatPlain(y, t, b)
+  };
+
+  document.getElementById('outputBox').textContent = outputs[activeTab];
+  document.getElementById('outputBox').setAttribute('data-outputs', JSON.stringify(outputs));
+}
+
+function loadHistory() {
+  const history = JSON.parse(localStorage.getItem('standupHistory') || '[]');
+  const container = document.getElementById('historyList');
+  container.innerHTML = '';
+  if (history.length === 0) {
+    container.innerHTML = '<div class="text-gray-500 text-xs">履歴なし</div>';
+    return;
+  }
+  history.slice().reverse().forEach((item, idx) => {
+    const realIdx = history.length - 1 - idx;
+    const div = document.createElement('div');
+    div.className = 'bg-gray-700 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-600 transition-colors';
+    div.innerHTML = `
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-gray-400 font-mono">${item.date}</span>
+        <button class="deleteHistBtn text-xs text-red-400 hover:text-red-300 ml-2" aria-label="この履歴を削除" data-idx="${realIdx}">削除</button>
+      </div>
+      <div class="text-xs text-gray-300 mt-1 truncate">昨日: ${esc(item.yesterday.slice(0,40))}${item.yesterday.length > 40 ? '...' : ''}</div>
+    `;
+    div.addEventListener('click', (e) => {
+      if (e.target.classList.contains('deleteHistBtn')) return;
+      document.getElementById('yesterday').value = item.yesterday;
+      document.getElementById('today').value = item.today;
+      document.getElementById('blocker').value = item.blocker;
+      generate();
+    });
+    container.appendChild(div);
+  });
+
+  container.querySelectorAll('.deleteHistBtn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const arr = JSON.parse(localStorage.getItem('standupHistory') || '[]');
+      arr.splice(parseInt(btn.getAttribute('data-idx')), 1);
+      localStorage.setItem('standupHistory', JSON.stringify(arr));
+      loadHistory();
+    });
+  });
+}
+
+document.getElementById('generateBtn').addEventListener('click', generate);
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const y = document.getElementById('yesterday').value.trim();
+  const t = document.getElementById('today').value.trim();
+  const b = document.getElementById('blocker').value.trim();
+  if (!y && !t) return;
+
+  const arr = JSON.parse(localStorage.getItem('standupHistory') || '[]');
+  arr.push({ yesterday: y, today: t, blocker: b, date: new Date().toLocaleString('ja-JP') });
+  if (arr.length > 30) arr.shift();
+  localStorage.setItem('standupHistory', JSON.stringify(arr));
+  loadHistory();
+  generate();
+});
+
+document.querySelectorAll('.tabBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeTab = btn.getAttribute('data-tab');
+    document.querySelectorAll('.tabBtn').forEach(b => {
+      b.className = 'tabBtn text-xs px-3 py-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600';
+    });
+    btn.className = 'tabBtn text-xs px-3 py-1.5 rounded bg-sky-700 text-white active-tab';
+
+    const data = document.getElementById('outputBox').getAttribute('data-outputs');
+    if (data) {
+      try { document.getElementById('outputBox').textContent = JSON.parse(data)[activeTab]; } catch(e) {}
+    }
+  });
+});
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+  const text = document.getElementById('outputBox').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = '✓ コピー済';
+    setTimeout(() => { btn.textContent = 'コピー'; }, 1500);
+  });
+});
+
+document.getElementById('clearHistBtn').addEventListener('click', () => {
+  localStorage.removeItem('standupHistory');
+  loadHistory();
+});
+
+loadHistory();
+generate();
+</script>
+</body>
+</html>
